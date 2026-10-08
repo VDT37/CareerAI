@@ -1,35 +1,88 @@
-"""UK Career Navigator demo API. State lives in memory, loaded from data/seed.json;
-POST /api/reset restores it before each demo run."""
+"""UK Career Navigator demo API. State is loaded from data/seed.json and kept in memory
+locally, or in Upstash Redis on Vercel (see store.py). POST /api/reset restores the seed
+before each demo run."""
 import copy
+import hmac
 import json
 import logging
+from collections.abc import MutableMapping
+from contextvars import ContextVar
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import ai
 import analytics
+import store
 import voice
 from config import env, llm_configured, voice_configured
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("main")
 # Fixed demo date, matching TODAY in frontend/src/ui.jsx, so new items land in the seeded week
 DEMO_TODAY = "2026-10-08"
 SEED = json.loads((Path(__file__).parent / "data" / "seed.json").read_text(encoding="utf-8"))
-state: dict = {}
 
+
+def fresh_state() -> dict:
+    s = copy.deepcopy(SEED)
+    s["ai_families"] = None
+    s["persona"]["pitch"] = None
+    return s
+
+
+_local = fresh_state()  # the in-memory state used locally
+_current: ContextVar[dict] = ContextVar("state", default=_local)
+
+
+class _State(MutableMapping):
+    """The demo state for the current request. Locally this is one shared dict; with Redis
+    the middleware loads a copy per request and saves it back after a successful write."""
+    def _d(self) -> dict: return _current.get()
+    def __getitem__(self, k): return self._d()[k]
+    def __setitem__(self, k, v): self._d()[k] = v
+    def __delitem__(self, k): del self._d()[k]
+    def __iter__(self): return iter(self._d())
+    def __len__(self): return len(self._d())
+
+
+state = _State()
 app = FastAPI(title="UK Career Navigator")
+
+
+@app.middleware("http")
+async def passcode_and_state(request: Request, call_next):
+    if not request.url.path.startswith("/api"):
+        return await call_next(request)
+    code = env("DEMO_PASSCODE")
+    if code and not hmac.compare_digest(request.headers.get("x-demo-passcode", ""), code):
+        return JSONResponse({"detail": "Enter the demo passcode."}, status_code=401)
+    if not store.enabled():
+        return await call_next(request)
+    try:
+        data = await run_in_threadpool(store.load) or fresh_state()
+    except Exception:
+        log.exception("Redis load failed, using in-memory state for this request")
+        return await call_next(request)
+    token = _current.set(data)
+    try:
+        response = await call_next(request)
+    finally:
+        _current.reset(token)
+    if request.method != "GET" and response.status_code < 400:
+        try:
+            await run_in_threadpool(store.save, data)
+        except Exception:
+            log.exception("Redis save failed")
+    return response
 
 
 def reset_state():
     state.clear()
-    state.update(copy.deepcopy(SEED))
-    state["ai_families"] = None
-    state["persona"]["pitch"] = None
-
-
-reset_state()
+    state.update(fresh_state())
 
 
 def _find(collection: str, item_id: str) -> dict:
@@ -48,7 +101,7 @@ def _next_id(collection: str, prefix: str) -> str:
 
 @app.get("/api/state")
 def get_state():
-    return state | {
+    return dict(state) | {
         "stats": analytics.compute(state),
         "config": {
             "llm": llm_configured(),

@@ -11,7 +11,7 @@ import re
 import httpx
 from anthropic import AnthropicBedrockMantle
 
-from config import env
+from config import bedrock_region, env
 
 
 class LLMNotConfigured(Exception):
@@ -19,9 +19,9 @@ class LLMNotConfigured(Exception):
 
 
 def complete(system: str, user: str, max_tokens: int = 1500) -> str:
-    region, model, key = env("AWS_REGION"), env("BEDROCK_MODEL_ID"), env("BEDROCK_API_KEY")
+    region, model, key = bedrock_region(), env("BEDROCK_MODEL_ID"), env("BEDROCK_API_KEY")
     if not (region and model):
-        raise LLMNotConfigured("Set AWS_REGION and BEDROCK_MODEL_ID in backend/.env")
+        raise LLMNotConfigured("Set BEDROCK_REGION and BEDROCK_MODEL_ID (backend/.env locally, project settings on Vercel)")
 
     if model.startswith("anthropic."):
         # api_key=None falls back to the standard AWS credential chain (SigV4)

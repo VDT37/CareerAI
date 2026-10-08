@@ -14,8 +14,13 @@ def env(name: str, default: str = "") -> str:
     return "" if value.startswith("your-") else value  # unfilled .env.example placeholder
 
 
+def bedrock_region() -> str:
+    # AWS_REGION is reserved on Vercel (set to the function region), so BEDROCK_REGION wins there
+    return env("BEDROCK_REGION") or env("AWS_REGION")
+
+
 def llm_configured() -> bool:
-    return bool(env("AWS_REGION") and env("BEDROCK_MODEL_ID"))
+    return bool(bedrock_region() and env("BEDROCK_MODEL_ID"))
 
 
 def voice_configured(agent: str) -> bool:

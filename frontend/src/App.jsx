@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { api, post } from './api'
+import { api, post, setPasscode } from './api'
 import { Avatar, Brand, NAV, resolvePage } from './ui'
 import Landing from './pages/Landing'
 import Onboarding from './pages/Onboarding'
@@ -24,14 +24,36 @@ function readHash() {
   return { page: PAGES[page] ? page : 'home', tab }
 }
 
+function PasscodeGate({ wrong, onSubmit }) {
+  const [code, setCode] = useState('')
+  return (
+    <main className="ob-body" style={{ maxWidth: 440 }}>
+      <div className="ob-title">
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Brand onClick={() => {}} /></div>
+        <h1>Enter the demo passcode</h1>
+        <p>This prototype uses live AI and voice, so it is behind a passcode.</p>
+      </div>
+      <form className="card stack" onSubmit={(e) => { e.preventDefault(); if (code.trim()) onSubmit(code.trim()) }}>
+        <label className="field">Passcode<input type="password" value={code} onChange={(e) => setCode(e.target.value)} autoFocus /></label>
+        {wrong && <p className="error">That passcode did not work. Check it and try again.</p>}
+        <button className="btn large" type="submit">Open the demo</button>
+      </form>
+    </main>
+  )
+}
+
 export default function App() {
   const [s, setS] = useState(null)
   const [error, setError] = useState(null)
   const [nav, setNav] = useState(readHash)
   const [focus, setFocus] = useState({}) // cross-page hand-offs, e.g. which job to tailor
   const [toast, setToast] = useState(null)
+  const [locked, setLocked] = useState(null) // null, 'ask' or 'wrong' when the backend wants a passcode
 
-  const refresh = useCallback(() => api('/api/state').then(setS).catch((e) => setError(e.message)), [])
+  const refresh = useCallback(() => api('/api/state').then((d) => { setLocked(null); setS(d) }).catch((e) => {
+    if (e.status === 401) setLocked((l) => (l ? 'wrong' : 'ask'))
+    else setError(e.message)
+  }), [])
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => {
     const onHash = () => setNav(readHash())
@@ -55,6 +77,7 @@ export default function App() {
     notify('Demo data restored')
   }
 
+  if (locked) return <PasscodeGate wrong={locked === 'wrong'} onSubmit={(code) => { setPasscode(code); refresh() }} />
   if (error) return <div className="main"><p className="error">Cannot reach the backend: {error}. Start it with uvicorn on port 8000.</p></div>
   if (!s) return <div className="main muted">Loading</div>
 

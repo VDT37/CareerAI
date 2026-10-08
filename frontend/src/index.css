@@ -45,7 +45,7 @@ ul.dots { padding-left: 18px; margin: 4px 0 0; display: grid; gap: 4px; }
 .linkish { background: none; border: 0; padding: 0; color: var(--green); font-weight: 600; cursor: pointer; font-size: inherit; }
 .linkish:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-input[type=text], input[type=number], select, textarea { max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+input[type=text], input[type=number], input[type=password], select, textarea { max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); box-shadow: var(--focus); }
 textarea { width: 100%; resize: vertical; line-height: 1.5; }
 label.field { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
